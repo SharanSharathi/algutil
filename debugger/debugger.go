@@ -1,10 +1,13 @@
-package debug
+package debugger
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"reflect"
+	"runtime"
+	"strconv"
 )
 
 type Debugger struct {
@@ -15,7 +18,7 @@ type Debugger struct {
 	trackList []string
 }
 
-func NewDebugger(enabled bool) *Debugger {
+func New(enabled bool) *Debugger {
 	return &Debugger{
 		enabled:  enabled,
 		output:   os.Stdout,
@@ -41,7 +44,15 @@ func (d *Debugger) Printf(format string, values ...interface{}) {
 	d.printTracked()
 }
 
-func (d *Debugger) Trace(name string, pointer interface{}) {
+func (d *Debugger) PrintTrace() {
+	if !d.enabled {
+		return
+	}
+
+	fmt.Fprintln(d.output, getTrace())
+}
+
+func (d *Debugger) Track(name string, pointer interface{}) {
 	ptr := reflect.ValueOf(pointer)
 	if ptr.Kind() != reflect.Ptr {
 		panic(fmt.Sprintf("%T is not a pointer, expecting to pass pointer", pointer))
@@ -119,4 +130,34 @@ func (d *Debugger) maxNameLength() (maxLen int) {
 	}
 
 	return
+}
+
+const maxCallerDepth = 100
+
+func getTrace() string {
+	pc := make([]uintptr, maxCallerDepth+1)
+
+	n := runtime.Callers(3, pc)
+	if n > 0 {
+		n--
+	}
+
+	pc = pc[:n]
+	frames := runtime.CallersFrames(pc)
+
+	buf := new(bytes.Buffer)
+
+	for frame, more := frames.Next(); more; frame, more = frames.Next() {
+		buf.WriteByte('\n')
+
+		buf.WriteString(frame.Function)
+		buf.WriteString("\n    ")
+		buf.WriteString(frame.File)
+		buf.WriteByte(':')
+		buf.WriteString(strconv.Itoa(frame.Line))
+	}
+
+	buf.WriteByte('\n')
+
+	return buf.String()
 }
