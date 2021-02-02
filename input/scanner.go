@@ -22,6 +22,12 @@ func NewScanner(r io.Reader, delim string) *Scanner {
 	}
 }
 
+func (s *Scanner) readIfEmpty() {
+	if len(s.line) == 0 {
+		s.readNextLine()
+	}
+}
+
 func (s *Scanner) readNextLine() {
 	line, err := s.reader.ReadBytes('\n')
 	if err != nil {
@@ -47,10 +53,61 @@ func (s *Scanner) readNextLine() {
 	s.line = line[:length-drop]
 }
 
-func (s *Scanner) readIfEmpty() {
-	if len(s.line) == 0 {
-		s.readNextLine()
+func (s *Scanner) skipPrefix(prefix []byte) {
+	if len(prefix) == 0 {
+		return
 	}
+
+	for bytes.HasPrefix(s.line, prefix) {
+		s.line = s.line[len(prefix):]
+		s.readIfEmpty()
+	}
+}
+
+func (s *Scanner) Next() []byte {
+	s.readIfEmpty()
+	s.skipPrefix(s.delim)
+
+	if len(s.line) == 0 {
+		return nil
+	}
+
+	if len(s.delim) == 0 { // no delim; return one byte
+		result := []byte{s.line[0]}
+		s.line = s.line[1:]
+
+		return result
+	}
+
+	ind := bytes.Index(s.line, s.delim)
+	if ind == -1 {
+		return s.Line()
+	}
+
+	result := s.line[:ind]
+	s.line = s.line[ind+len(s.delim):]
+
+	return result
+}
+
+func (s *Scanner) NextString() string {
+	return string(s.Next())
+}
+
+func (s *Scanner) NextInt() int {
+	return parseInt(s.NextString())
+}
+
+func (s *Scanner) NextUint() uint {
+	return parseUint(s.NextString())
+}
+
+func (s *Scanner) NextInt64() int64 {
+	return parseInt64(s.NextString())
+}
+
+func (s *Scanner) NextUint64() uint64 {
+	return parseUint64(s.NextString())
 }
 
 func (s *Scanner) Line() []byte {
@@ -66,41 +123,74 @@ func (s *Scanner) LineString() string {
 	return string(s.Line())
 }
 
-func (s *Scanner) SplitLineStrings() []string {
+func (s *Scanner) SliceOfBytes() [][]byte {
 	splitted := bytes.Split(s.Line(), s.delim)
-	result := make([]string, 0, len(splitted))
+	bytesSlice := make([][]byte, 0, len(splitted))
 
-	for _, by := range splitted {
-		str := string(by)
-
-		if str != "" {
-			result = append(result, str)
+	for _, bytes := range splitted {
+		if len(bytes) > 0 {
+			bytesSlice = append(bytesSlice, bytes)
 		}
 	}
 
-	return result
+	return bytesSlice
 }
 
-func (s *Scanner) SplitLineInts() []int {
-	lineStrings := s.SplitLineStrings()
-	lineInts := make([]int, 0, len(lineStrings))
+func (s *Scanner) SliceOfStrings() []string {
+	splitted := bytes.Split(s.Line(), s.delim)
+	stringSlice := make([]string, 0, len(splitted))
 
-	for _, str := range lineStrings {
-		lineInts = append(lineInts, parseInt(str))
+	for _, bytes := range splitted {
+		if len(bytes) > 0 {
+			stringSlice = append(stringSlice, string(bytes))
+		}
 	}
 
-	return lineInts
+	return stringSlice
 }
 
-func (s *Scanner) SplitLineInt64s() []int64 {
-	lineStrings := s.SplitLineStrings()
-	lineInt64s := make([]int64, 0, len(lineStrings))
+func (s *Scanner) SliceOfInts() []int {
+	stringSlice := s.SliceOfStrings()
+	intSlice := make([]int, len(stringSlice))
 
-	for _, str := range lineStrings {
-		lineInt64s = append(lineInt64s, parseInt64(str))
+	for i, str := range stringSlice {
+		intSlice[i] = parseInt(str)
 	}
 
-	return lineInt64s
+	return intSlice
+}
+
+func (s *Scanner) SliceOfUints() []uint {
+	stringSlice := s.SliceOfStrings()
+	uintSlice := make([]uint, len(stringSlice))
+
+	for i, str := range stringSlice {
+		uintSlice[i] = parseUint(str)
+	}
+
+	return uintSlice
+}
+
+func (s *Scanner) SliceOfInt64s() []int64 {
+	stringSlice := s.SliceOfStrings()
+	int64Slice := make([]int64, len(stringSlice))
+
+	for i, str := range stringSlice {
+		int64Slice[i] = parseInt64(str)
+	}
+
+	return int64Slice
+}
+
+func (s *Scanner) SliceOfUint64s() []uint64 {
+	stringSlice := s.SliceOfStrings()
+	uint64Slice := make([]uint64, len(stringSlice))
+
+	for i, str := range stringSlice {
+		uint64Slice[i] = parseUint64(str)
+	}
+
+	return uint64Slice
 }
 
 func (s *Scanner) ReachedEOF() bool {
@@ -116,6 +206,15 @@ func parseInt(str string) int {
 	return i
 }
 
+func parseUint(str string) uint {
+	i, err := strconv.ParseUint(str, 10, 0)
+	if err != nil {
+		panic(err)
+	}
+
+	return uint(i)
+}
+
 func parseInt64(str string) int64 {
 	i, err := strconv.ParseInt(str, 10, 64)
 	if err != nil {
@@ -125,32 +224,11 @@ func parseInt64(str string) int64 {
 	return i
 }
 
-func (s *Scanner) skipPrefix(prefix []byte) {
-	for bytes.HasPrefix(s.line, prefix) {
-		s.line = s.line[len(prefix):]
-		s.readIfEmpty()
-	}
-}
-
-func (s *Scanner) NextString() string {
-	s.readIfEmpty()
-	s.skipPrefix(s.delim)
-
-	ind := bytes.Index(s.line, s.delim)
-	if ind == -1 {
-		return s.LineString()
+func parseUint64(str string) uint64 {
+	i, err := strconv.ParseUint(str, 10, 64)
+	if err != nil {
+		panic(err)
 	}
 
-	result := s.line[:ind]
-	s.line = s.line[ind+len(s.delim):]
-
-	return string(result)
-}
-
-func (s *Scanner) NextInt() int {
-	return parseInt(s.NextString())
-}
-
-func (s *Scanner) NextInt64() int64 {
-	return parseInt64(s.NextString())
+	return i
 }
